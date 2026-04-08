@@ -1,0 +1,32 @@
+# Arquivos baixados (podem chegar a dezenas de GB)
+data/pdfs/
+
+# Controle de progresso (gerado automaticamente pelo script)
+data/downloaded.txt
+data/failed.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+._*
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
