@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(xxd \"._biblioteca_aneel_gov_br_legislacao_2016_metadados.json\")",
-      "Bash(python3:*)",
-      "Bash(python:*)"
-    ]
-  }
-}
