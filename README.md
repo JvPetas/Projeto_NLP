@@ -48,6 +48,42 @@ O script:
 
 Para retentar arquivos que falharam, basta rodar o script novamente — ele pula automaticamente o que já foi baixado com sucesso.
 
+## Etapas do projeto
+
+### Etapa 1: Coleta de documentos
+
+Script `data/download.py` — baixa os ~27.000 documentos a partir dos metadados JSON.
+
+### Etapa 2: Teste de parsing em amostra representativa (`data/test_sample/`)
+
+Antes de processar o corpus completo, 15 arquivos representativos foram selecionados
+para validar o pipeline de parsing. A amostra cobre:
+- PDFs com texto corrido (2016 e 2022)
+- PDFs com tabelas sem bordas (detecção por padrão de espaçamento)
+- PDF de grande porte (>500 KB, múltiplas páginas)
+- PDF pequeno (<50 KB)
+- PDF de 2016 para verificação de encoding
+- Tipos distintos: DSP (Despacho) e REN (Resolução Normativa)
+- Arquivo HTML e arquivo ZIP
+- PDFs com conteúdo misto (texto + tabela + texto na mesma página)
+- 2 PDFs aleatórios de 2021
+
+**Arquivos:**
+- `data/test_sample/sample_files.json` — lista dos 15 arquivos selecionados
+- `data/test_sample/test_parsing.py` — script de teste (PyMuPDF + detecção por regex)
+- `data/test_sample/relatorio_teste.md` — resultados e recomendações
+
+**Estratégia de detecção de tabelas:** as tabelas do corpus ANEEL não possuem bordas
+visíveis. A detecção usa as posições x,y das palavras extraídas pelo PyMuPDF: quando
+o gap horizontal entre palavras adjacentes supera 15 pontos tipográficos, é inserido
+um separador de coluna. Blocos com 3+ linhas consecutivas e 2+ colunas são convertidos
+para Markdown.
+
+**Resultado:** 1 PDF digitalizado identificado (`nreh20223128.pdf`) — candidato a OCR
+condicional via `scan_report.json` no pipeline final.
+
+---
+
 ## Volume esperado
 
 | Ano  | Documentos |

@@ -28,6 +28,9 @@ env/
 Thumbs.db
 desktop.ini
 
+# Resultados individuais do teste de parsing (gerados automaticamente)
+data/test_sample/resultados/
+
 # Logs
 *.log
 .claude/

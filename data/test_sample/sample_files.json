@@ -1,0 +1,94 @@
+{
+  "arquivos": [
+    {
+      "caminho": "data/pdfs/2016/dsp2016001.pdf",
+      "ano": "2016",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF de 2016 com texto corrido (DSP, 181KB)"
+    },
+    {
+      "caminho": "data/pdfs/2022/aap2022014ti.pdf",
+      "ano": "2022",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF de 2022 com texto corrido (AAP, 73KB)"
+    },
+    {
+      "caminho": "data/pdfs/2016/ren2016699.pdf",
+      "ano": "2016",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF com tabelas visíveis — Resolução Normativa de 2016 (280KB)"
+    },
+    {
+      "caminho": "data/pdfs/2022/ren20221040.pdf",
+      "ano": "2022",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF com tabelas visíveis — Resolução Normativa de 2022 (152KB)"
+    },
+    {
+      "caminho": "data/pdfs/2022/nreh20223128.pdf",
+      "ano": "2022",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF grande com múltiplas páginas (41MB — maior arquivo do corpus)"
+    },
+    {
+      "caminho": "data/pdfs/2016/dsp2016sn207mme.pdf",
+      "ano": "2016",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF pequeno (4KB — menor que 50KB)"
+    },
+    {
+      "caminho": "data/pdfs/2016/aap2016001ti.pdf",
+      "ano": "2016",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF de 2016 para teste de encoding (possível diferença de codificação em documentos antigos)"
+    },
+    {
+      "caminho": "data/pdfs/2022/dsp2022016spde.pdf",
+      "ano": "2022",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF do tipo DSP (Despacho) de 2022"
+    },
+    {
+      "caminho": "data/pdfs/2021/ren2020900.pdf",
+      "ano": "2021",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF do tipo REN (Resolução Normativa) — contraste de tipo com DSP"
+    },
+    {
+      "caminho": "data/pdfs/2016/ren2016699.html",
+      "ano": "2016",
+      "tipo_arquivo": "html",
+      "motivo_selecao": "Arquivo HTML — Resolução Normativa de 2016 em formato web"
+    },
+    {
+      "caminho": "data/pdfs/2016/aren2016719_2.zip",
+      "ano": "2016",
+      "tipo_arquivo": "zip",
+      "motivo_selecao": "Arquivo ZIP — documento auxiliar com dados em formato comprimido"
+    },
+    {
+      "caminho": "data/pdfs/2021/nreh20212869.pdf",
+      "ano": "2021",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF técnico grande (14MB) — documento de revisão tarifária com texto + tabelas + texto na mesma página"
+    },
+    {
+      "caminho": "data/pdfs/2016/area20165887_2.pdf",
+      "ano": "2016",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF técnico grande (29MB) — laudo regulatório com conteúdo misto: texto corrido + tabelas + texto na mesma página"
+    },
+    {
+      "caminho": "data/pdfs/2021/dsp20211907ti.pdf",
+      "ano": "2021",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF aleatório de 2021 — amostra geral do corpus do ano"
+    },
+    {
+      "caminho": "data/pdfs/2021/dsp20212581.pdf",
+      "ano": "2021",
+      "tipo_arquivo": "pdf",
+      "motivo_selecao": "PDF aleatório de 2021 — amostra geral do corpus do ano"
+    }
+  ]
+}
