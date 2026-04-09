@@ -71,7 +71,22 @@ Análise detalhada: `data/failed_final_analysis.md`
 
 ---
 
-### Etapa 2: Teste de parsing em amostra representativa (`data/test_sample/`)
+### Etapa 2: Varredura de PDFs escaneados (`data/scan_pdfs.py`)
+
+Percorre todos os PDFs nas 3 pastas de anos e classifica cada arquivo:
+- **`tem_texto`** — PyMuPDF extraiu mais de 50 caracteres
+- **`escaneado`** — menos de 50 caracteres (imagem sem camada de texto, requer OCR)
+
+Suporta pausar e continuar via `data/scan_progress.txt`. Resultado em
+`data/scan_report.json` com totais por ano e percentual de escaneados.
+
+```bash
+python data/scan_pdfs.py
+```
+
+---
+
+### Etapa 3: Teste de parsing em amostra representativa (`data/test_sample/`)
 
 Antes de processar o corpus completo, 15 arquivos representativos foram selecionados
 para validar o pipeline de parsing. A amostra cobre:

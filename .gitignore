@@ -31,6 +31,10 @@ desktop.ini
 # Resultados individuais do teste de parsing (gerados automaticamente)
 data/test_sample/resultados/
 
+# Varredura de PDFs escaneados (gerado automaticamente)
+data/scan_report.json
+data/scan_progress.txt
+
 # Logs
 *.log
 .claude/
