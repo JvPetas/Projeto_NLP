@@ -10,8 +10,10 @@ Projeto_NLP/
 ├── biblioteca_aneel_gov_br_legislacao_2021_metadados.json
 ├── biblioteca_aneel_gov_br_legislacao_2022_metadados.json
 ├── data/
-│   ├── download.py        # script de coleta
-│   └── pdfs/              # arquivos baixados (ignorado pelo git)
+│   ├── download.py               # script de coleta principal
+│   ├── retry_failed.py           # retry para URLs com falha
+│   ├── failed_final_analysis.md  # análise de impacto das falhas definitivas
+│   └── pdfs/                     # arquivos baixados (ignorado pelo git)
 │       ├── 2016/
 │       ├── 2021/
 │       └── 2022/
@@ -53,6 +55,21 @@ Para retentar arquivos que falharam, basta rodar o script novamente — ele pula
 ### Etapa 1: Coleta de documentos
 
 Script `data/download.py` — baixa os ~27.000 documentos a partir dos metadados JSON.
+
+### Etapa 1.1: Retry de downloads com falha (`data/retry_failed.py`)
+
+Script que relê `data/failed.txt`, tenta baixar cada URL com até 5 tentativas
+(delay 3–8s, timeout 90s) e classifica as falhas permanentes.
+
+**Resultado:** das 467 URLs com falha inicial, 432 já estavam em `downloaded.txt`
+(baixadas com sucesso anteriormente). As 35 realmente pendentes retornaram HTTP 404
+definitivo — todos documentos secundários (erratas, adendos, retificações).
+
+**Taxa de cobertura final do corpus:** 99,87% (~26.990 de ~27.025 arquivos).
+
+Análise detalhada: `data/failed_final_analysis.md`
+
+---
 
 ### Etapa 2: Teste de parsing em amostra representativa (`data/test_sample/`)
 
