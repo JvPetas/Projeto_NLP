@@ -116,6 +116,45 @@ condicional via `scan_report.json` no pipeline final.
 
 ---
 
+### Etapa 4: Parsing e extração de texto (`data/parse.py`)
+
+Parser principal do corpus. Para cada documento nos 3 JSONs de metadados, localiza o
+arquivo em `data/pdfs/{ano}/`, extrai o texto e gera um JSON estruturado em
+`data/corpus/{ano}/`.
+
+**Estratégia de extração:**
+- PDFs: PyMuPDF (`fitz`) para texto corrido + detecção de tabelas por posicionamento
+  espacial de palavras (gap > 15pt entre palavras = separador de coluna)
+- HTMLs: BeautifulSoup4 removendo `nav`, `header`, `footer`, `script`, `style`
+- ZIPs: cada PDF interno é processado em memória e vira documento separado
+
+**Limpeza em 3 camadas:**
+1. Padrões específicos ANEEL: "Imprimir", "Pág. X de Y", URLs, "CÓPIA NÃO CONTROLADA"
+2. Normalização: hifenização, `\xa0`, espaços duplos, quebras excessivas
+3. Cabeçalhos/rodapés repetidos: linhas que aparecem em > 30% das páginas
+
+**Score de qualidade por documento (0 a 1):**
+- `0.00` — vazio ou escaneado
+- `0.50–0.99` — texto com páginas suspeitas (razão alfanumérica < 55%)
+- `1.00` — texto limpo e bem estruturado
+
+**9 PDFs escaneados** identificados pelo `scan_report.json` são pulados e registrados
+em `data/skipped_scanned.json` para tratamento manual posterior.
+
+```bash
+python data/parse.py                          # processa tudo
+python data/parse.py --ano 2016               # apenas 2016
+python data/parse.py --limite 100             # primeiros 100 arquivos
+python data/parse.py --arquivos arq1.pdf arq2.zip  # arquivos específicos
+```
+
+Saídas: `data/corpus/{ano}/*.json`, `data/parse_summary.json`,
+`data/parse_errors.json`, `data/skipped_scanned.json`, `data/missing_files.json`
+
+Dependências adicionais: `pip install pymupdf beautifulsoup4`
+
+---
+
 ## Volume esperado
 
 | Ano  | Documentos |

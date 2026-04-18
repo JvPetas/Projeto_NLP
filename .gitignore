@@ -35,6 +35,16 @@ data/test_sample/resultados/
 data/scan_report.json
 data/scan_progress.txt
 
+# Corpus gerado pelo parser (pode chegar a vários GB)
+data/corpus/
+
+# Controle e saídas do parser
+data/parsed.txt
+data/parse_errors.json
+data/parse_summary.json
+data/skipped_scanned.json
+data/missing_files.json
+
 # Logs
 *.log
 .claude/
