@@ -45,6 +45,11 @@ data/parse_summary.json
 data/skipped_scanned.json
 data/missing_files.json
 
+# Saídas do OCR (geradas automaticamente)
+data/ocr_errors.json
+data/ocr_summary.json
+data/ocr_parsed.txt
+
 # Logs
 *.log
 .claude/

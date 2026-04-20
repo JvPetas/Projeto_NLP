@@ -116,6 +116,43 @@ condicional via `scan_report.json` no pipeline final.
 
 ---
 
+### Etapa 3.1: OCR para PDFs escaneados (`data/ocr_scanned.py`)
+
+Os 9 PDFs identificados pelo `scan_pdfs.py` como escaneados (sem camada de texto)
+são processados por OCR com Tesseract, gerando documentos no mesmo formato do `parse.py`.
+
+**Estratégia:**
+- Cada página é renderizada como imagem JPEG a 300 DPI via `pdf2image` (Poppler)
+- Tesseract aplica OCR com modelo de língua portuguesa (`--lang por --psm 1`)
+- A confiança média do Tesseract por página é registrada no campo `confianca_ocr`
+- Texto extraído passa pelas mesmas 3 camadas de limpeza do `parse.py`
+- Documentos gerados incluem `"ocr": true` para identificação downstream
+
+**Campos extras no JSON de saída:**
+- `ocr: true` — marca o documento como produto de OCR
+- `confianca_ocr` — média de confiança Tesseract (0–100) sobre todas as páginas
+
+```bash
+python data/ocr_scanned.py                                    # todos os 9
+python data/ocr_scanned.py --arquivos nreh20223128.pdf        # arquivo específico
+python data/ocr_scanned.py --dpi 200                          # resolução menor
+python data/ocr_scanned.py --poppler-path "C:/poppler/bin"    # caminho do Poppler
+```
+
+Dependências: `pip install pytesseract pdf2image`
+
+Binários externos obrigatórios:
+- **Tesseract-OCR** com pacote de língua portuguesa: https://github.com/UB-Mannheim/tesseract/wiki
+- **Poppler** (Windows): https://github.com/oschwartz10612/poppler-windows/releases/
+
+Saídas: `data/corpus/{ano}/{arquivo}_ocr_{tipo}.json`, `data/ocr_errors.json`,
+`data/ocr_summary.json`
+
+Após esta etapa o corpus fica 100% completo (todos os documentos com texto
+extraível cobertos).
+
+---
+
 ### Etapa 4: Parsing e extração de texto (`data/parse.py`)
 
 Parser principal do corpus. Para cada documento nos 3 JSONs de metadados, localiza o
