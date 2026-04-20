@@ -21,6 +21,7 @@ Saídas:
 """
 
 import argparse
+import io
 import json
 import re
 import time
@@ -427,6 +428,87 @@ def _extracao_vazia(erros: list[str] = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Extração Excel — openpyxl
+# ---------------------------------------------------------------------------
+
+def _extrair_linhas_openpyxl(fonte) -> tuple[list[str], int]:
+    """Extrai linhas e contagem de sheets via openpyxl."""
+    import openpyxl
+    wb = openpyxl.load_workbook(fonte, read_only=True, data_only=True)
+    num_sheets = len(wb.sheetnames)
+    blocos: list[str] = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        linhas: list[str] = []
+        for row in ws.iter_rows(values_only=True):
+            celulas = [str(c) if c is not None else "" for c in row]
+            if any(c.strip() for c in celulas):
+                linhas.append("   ".join(celulas).rstrip())
+        if linhas:
+            blocos.append(f"[{sheet_name}]\n" + "\n".join(linhas))
+    wb.close()
+    return blocos, num_sheets
+
+
+def _extrair_linhas_xlrd(fonte) -> tuple[list[str], int]:
+    """Extrai linhas e contagem de sheets via xlrd (formato .xls legado)."""
+    import xlrd
+    raw = fonte if isinstance(fonte, bytes) else open(fonte, "rb").read()
+    wb = xlrd.open_workbook(file_contents=raw)
+    blocos: list[str] = []
+    for sheet in wb.sheets():
+        linhas: list[str] = []
+        for row_idx in range(sheet.nrows):
+            celulas = [str(sheet.cell_value(row_idx, c)) for c in range(sheet.ncols)]
+            if any(c.strip() for c in celulas):
+                linhas.append("   ".join(celulas).rstrip())
+        if linhas:
+            blocos.append(f"[{sheet.name}]\n" + "\n".join(linhas))
+    return blocos, wb.nsheets
+
+
+def processar_excel(caminho_ou_bytes) -> dict:
+    """Extrai texto de planilha Excel (xlsx/xlsm via openpyxl, xls via xlrd).
+
+    Aceita Path ou bytes (para arquivos extraídos de RAR/ZIP).
+    """
+    erros: list[str] = []
+    fonte = io.BytesIO(caminho_ou_bytes) if isinstance(caminho_ou_bytes, bytes) else caminho_ou_bytes
+    ext_hint = Path(str(caminho_ou_bytes)).suffix.lower().strip() if not isinstance(caminho_ou_bytes, bytes) else ""
+
+    try:
+        # Tenta openpyxl primeiro (xlsx/xlsm); fallback para xlrd (.xls legado)
+        try:
+            blocos, num_sheets = _extrair_linhas_openpyxl(
+                io.BytesIO(caminho_ou_bytes) if isinstance(caminho_ou_bytes, bytes) else str(fonte)
+            )
+        except Exception as e_openpyxl:
+            if ext_hint == ".xls" or "zip" in str(e_openpyxl).lower():
+                blocos, num_sheets = _extrair_linhas_xlrd(caminho_ou_bytes)
+            else:
+                raise
+
+        texto_bruto = "\n\n".join(blocos)
+        texto, lixo = limpar_texto(texto_bruto, set())
+        texto, _ = _aplicar_ftfy(texto)
+
+        return {
+            "texto": texto,
+            "tem_tabela": True,
+            "paginas": num_sheets,
+            "caracteres_extraidos": len(texto),
+            "paginas_suspeitas": [],
+            "chars_tabela": len(texto),
+            "lixo_removido": lixo,
+            "encoding_detectado": "utf-8",
+            "erros": erros,
+        }
+    except Exception as e:
+        erros.append(str(e))
+        return _extracao_vazia(erros)
+
+
+# ---------------------------------------------------------------------------
 # Decodificação de nomes de arquivo dentro de ZIP
 # ---------------------------------------------------------------------------
 
@@ -701,7 +783,7 @@ def main() -> None:
 
     # Progresso anterior
     parsed_set = carregar_parsed()
-    filtro_arquivos = set(args.arquivos) if args.arquivos else None
+    filtro_arquivos = {a.strip() for a in args.arquivos} if args.arquivos else None
     print(f"  {len(parsed_set)} arquivos já processados (retomada)")
 
     CORPUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -748,7 +830,7 @@ def main() -> None:
                         continue
 
                     # Filtro por arquivo específico
-                    if filtro_arquivos and arquivo not in filtro_arquivos:
+                    if filtro_arquivos and arquivo.strip() not in filtro_arquivos:
                         continue
 
                     caminho_rel = f"data/pdfs/{ano_json}/{arquivo}"
@@ -795,7 +877,7 @@ def main() -> None:
                         "autor": "ANEEL", "ano": ano_json, "ano_json": ano_json,
                     })
 
-                    ext = caminho_abs.suffix.lstrip(".").lower()
+                    ext = caminho_abs.suffix.lstrip(".").lower().strip()
                     print(f"  {arquivo} ...", end=" ", flush=True)
 
                     try:
@@ -813,6 +895,16 @@ def main() -> None:
 
                         elif ext in ("html", "htm"):
                             extracao = processar_html(caminho_abs)
+                            chars_removidos_total += extracao.get("lixo_removido", 0)
+                            if extracao["erros"]:
+                                erros_por_arquivo[arquivo] = extracao["erros"]
+                                stats["erros"] += 1
+                            docs_gerados.append(
+                                gerar_documento(meta, extracao, arquivo)
+                            )
+
+                        elif ext in ("xlsx", "xlsm", "xls"):
+                            extracao = processar_excel(caminho_abs)
                             chars_removidos_total += extracao.get("lixo_removido", 0)
                             if extracao["erros"]:
                                 erros_por_arquivo[arquivo] = extracao["erros"]
@@ -862,6 +954,85 @@ def main() -> None:
 
                             except zipfile.BadZipFile as e_zip:
                                 erros_por_arquivo[arquivo] = [f"ZIP inválido: {e_zip}"]
+                                stats["erros"] += 1
+
+                        elif ext == "rar":
+                            try:
+                                import rarfile
+                                import shutil as _shutil
+                                # Localiza unrar: PATH, WinRAR ou 7-Zip
+                                if not _shutil.which(rarfile.UNRAR_TOOL):
+                                    for _candidate in [
+                                        r"C:\Program Files\WinRAR\UnRAR.exe",
+                                        r"C:\Program Files (x86)\WinRAR\UnRAR.exe",
+                                        r"C:\Program Files\7-Zip\7z.exe",
+                                    ]:
+                                        if Path(_candidate).exists():
+                                            rarfile.UNRAR_TOOL = _candidate
+                                            break
+                                with rarfile.RarFile(str(caminho_abs)) as rf:
+                                    for info in rf.infolist():
+                                        if info.is_dir():
+                                            continue
+                                        nome_base = Path(info.filename).name
+                                        ext_int = Path(nome_base).suffix.lstrip(".").lower().strip()
+
+                                        if ext_int == "pdf":
+                                            if nome_base in escaneados_set:
+                                                skipped_scanned.append({
+                                                    "arquivo": nome_base,
+                                                    "caminho": f"{caminho_rel}/{nome_base}",
+                                                    "ato_id":  meta["ato_id"],
+                                                    "motivo":  "PDF escaneado dentro de RAR",
+                                                })
+                                                stats["escaneados_pulados"] += 1
+                                                continue
+                                            try:
+                                                pdf_bytes = rf.read(info.filename)
+                                                extr = processar_pdf(pdf_bytes)
+                                                chars_removidos_total += extr.get("lixo_removido", 0)
+                                                if extr["erros"]:
+                                                    k = f"{arquivo}/{nome_base}"
+                                                    erros_por_arquivo[k] = extr["erros"]
+                                                    stats["erros"] += 1
+                                                docs_gerados.append(
+                                                    gerar_documento(
+                                                        meta.copy(), extr,
+                                                        arquivo_origem=nome_base,
+                                                        zip_pai=arquivo,
+                                                    )
+                                                )
+                                            except Exception as e_int:
+                                                k = f"{arquivo}/{nome_base}"
+                                                erros_por_arquivo[k] = [str(e_int)]
+                                                stats["erros"] += 1
+
+                                        elif ext_int in ("xlsx", "xlsm", "xls"):
+                                            try:
+                                                xls_bytes = rf.read(info.filename)
+                                                extr = processar_excel(xls_bytes)
+                                                chars_removidos_total += extr.get("lixo_removido", 0)
+                                                if extr["erros"]:
+                                                    k = f"{arquivo}/{nome_base}"
+                                                    erros_por_arquivo[k] = extr["erros"]
+                                                    stats["erros"] += 1
+                                                docs_gerados.append(
+                                                    gerar_documento(
+                                                        meta.copy(), extr,
+                                                        arquivo_origem=nome_base,
+                                                        zip_pai=arquivo,
+                                                    )
+                                                )
+                                            except Exception as e_int:
+                                                k = f"{arquivo}/{nome_base}"
+                                                erros_por_arquivo[k] = [str(e_int)]
+                                                stats["erros"] += 1
+
+                            except rarfile.BadRarFile as e_rar:
+                                erros_por_arquivo[arquivo] = [f"RAR inválido: {e_rar}"]
+                                stats["erros"] += 1
+                            except rarfile.RarCannotExec as e_rar:
+                                erros_por_arquivo[arquivo] = [f"unrar não encontrado: {e_rar}"]
                                 stats["erros"] += 1
 
                         else:
