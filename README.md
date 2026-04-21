@@ -153,6 +153,33 @@ extraível cobertos).
 
 ---
 
+### Etapa 5: Upload para Hugging Face (`data/upload_hf.py`)
+
+Publica o corpus completo no Hugging Face Hub como dataset público.
+
+- **27.060 documentos** públicos da ANEEL (2016, 2021, 2022)
+- **~357 milhões de caracteres** extraídos
+- **97,2%** dos documentos com score de qualidade máximo (1.0)
+- Dataset disponível em: https://huggingface.co/datasets/JvPetas/aneel-legislacao
+
+```python
+from datasets import load_dataset
+
+ds = load_dataset("JvPetas/aneel-legislacao")
+```
+
+```bash
+# Token via .env, hf_token.txt ou variável de ambiente HF_TOKEN
+python data/upload_hf.py
+
+# Validar sem fazer upload
+python data/upload_hf.py --dry-run
+```
+
+Dependências: `pip install datasets huggingface_hub`
+
+---
+
 ### Etapa 4: Parsing e extração de texto (`data/parse.py`)
 
 Parser principal do corpus. Para cada documento nos 3 JSONs de metadados, localiza o

@@ -1,3 +1,6 @@
+# Credenciais — nunca versionar
+hf_token.txt
+
 # Arquivos baixados (podem chegar a dezenas de GB)
 data/pdfs/
 
