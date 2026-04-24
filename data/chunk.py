@@ -27,13 +27,14 @@ import tiktoken
 # Caminhos
 # ---------------------------------------------------------------------------
 
-ROOT          = Path(__file__).parent.parent
-CORPUS_DIR    = ROOT / "data" / "corpus"
-CHUNKS_DIR    = ROOT / "data" / "chunks"
-FILHOS_DIR    = CHUNKS_DIR / "filhos"
-PAIS_DIR      = CHUNKS_DIR / "pais"
-CHUNKED_FILE  = ROOT / "data" / "chunked.txt"
-SUMMARY_FILE  = ROOT / "data" / "chunk_summary.json"
+ROOT             = Path(__file__).parent.parent
+CORPUS_DIR       = ROOT / "data" / "corpus"
+CHUNKS_DIR       = ROOT / "data" / "chunks"
+FILHOS_DIR       = CHUNKS_DIR / "filhos"
+PAIS_DIR         = CHUNKS_DIR / "pais"
+CHUNKED_FILE     = ROOT / "data" / "chunked.txt"
+SUMMARY_FILE     = ROOT / "data" / "chunk_summary.json"
+TRUNCATED_LOG    = ROOT / "data" / "chunks_truncados.json"
 
 # ---------------------------------------------------------------------------
 # Parâmetros
@@ -50,6 +51,16 @@ TIPO_ABREV = {
     "anexo":          "an",
     "decisao":        "de",
     "outro":          "ou",
+}
+
+# Limite máximo de chunks filho por documento, por tipo
+MAX_CHUNKS_POR_TIPO = {
+    "texto_integral": 200,
+    "voto":           150,
+    "nota_tecnica":   200,
+    "anexo":          50,
+    "decisao":        100,
+    "outro":          50,
 }
 
 ENC = tiktoken.get_encoding("cl100k_base")
@@ -274,9 +285,14 @@ def chunk_anexo(texto: str) -> tuple:
     all_x  = []
     for bloco, is_table in blocks:
         if is_table:
-            subs = split_table_rows(bloco, FILHO_MAX)
-            all_c.extend(subs)
-            all_x.extend(["[tabela]"] * len(subs))
+            # Correção 4: só dividir se realmente maior que FILHO_MAX
+            if count_tokens(bloco) <= FILHO_MAX:
+                all_c.append(bloco)
+                all_x.append("[tabela]")
+            else:
+                subs = split_table_rows(bloco, FILHO_MAX)
+                all_c.extend(subs)
+                all_x.extend(["[tabela]"] * len(subs))
         else:
             if bloco.strip():
                 subs = split_fixed(bloco, FILHO_MAX, 0)
@@ -336,23 +352,64 @@ def build_parents(child_texts: list) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Log de truncamentos
+# ---------------------------------------------------------------------------
+
+def log_truncated(info: dict) -> None:
+    existing = []
+    if TRUNCATED_LOG.exists():
+        try:
+            existing = json.loads(TRUNCATED_LOG.read_text(encoding="utf-8"))
+        except Exception:
+            existing = []
+    existing.append(info)
+    TRUNCATED_LOG.write_text(
+        json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Processamento de um documento
 # ---------------------------------------------------------------------------
 
-def process_doc(doc: dict) -> tuple:
+def process_doc(doc: dict, stem: str = "") -> tuple:
+    """
+    Retorna (filhos, pais, truncation_info).
+    truncation_info é None se não houve truncamento.
+    stem é o nome do arquivo sem extensão; usado como prefixo do chunk_id.
+    """
     ato_id = doc.get("ato_id", "")
     tipo   = doc.get("tipo_documento", "outro")
     texto  = doc.get("texto", "")
 
+    # Correção 1: usar stem do arquivo como prefixo, garantindo unicidade
+    prefix = stem if stem else ato_id
+
     if not texto or not texto.strip():
-        return [], []
+        return [], [], None
 
     abrev   = TIPO_ABREV.get(tipo, "ou")
     chunker = CHUNKERS.get(tipo, chunk_outro)
 
     child_texts, contexts = chunker(texto)
     if not child_texts:
-        return [], []
+        return [], [], None
+
+    # Correção 2: aplicar limite máximo de chunks por tipo
+    max_chunks     = MAX_CHUNKS_POR_TIPO.get(tipo, 50)
+    total_tokens   = count_tokens(texto)
+    truncation_info = None
+
+    if len(child_texts) > max_chunks:
+        truncation_info = {
+            "arquivo":         stem,
+            "tipo":            tipo,
+            "chunks_gerados":  len(child_texts),
+            "chunks_mantidos": max_chunks,
+            "tokens_totais":   total_tokens,
+        }
+        child_texts = child_texts[:max_chunks]
+        contexts    = contexts[:max_chunks]
 
     parent_texts = build_parents(child_texts)
     n = len(child_texts)
@@ -374,8 +431,9 @@ def process_doc(doc: dict) -> tuple:
 
     for i, (ctexto, ctx, ptexto) in enumerate(zip(child_texts, contexts, parent_texts)):
         num      = i + 1
-        chunk_id = f"{ato_id}_{abrev}_c{num:03d}"
-        pai_id   = f"{ato_id}_{abrev}_p{num:03d}"
+        # Correção 1: chunk_id baseado no stem do arquivo, não no ato_id
+        chunk_id = f"{prefix}_{abrev}_c{num:03d}"
+        pai_id   = f"{prefix}_{abrev}_p{num:03d}"
 
         filho = {
             "chunk_id":          chunk_id,
@@ -385,11 +443,17 @@ def process_doc(doc: dict) -> tuple:
             "numero_chunk":      num,
             "total_chunks":      n,
             "posicao_relativa":  round(num / n, 4),
-            "chunk_anterior_id": f"{ato_id}_{abrev}_c{num - 1:03d}" if i > 0 else None,
-            "chunk_proximo_id":  f"{ato_id}_{abrev}_c{num + 1:03d}" if i < n - 1 else None,
+            # Correção 1: referências entre chunks também usam prefix
+            "chunk_anterior_id": f"{prefix}_{abrev}_c{num - 1:03d}" if i > 0 else None,
+            "chunk_proximo_id":  f"{prefix}_{abrev}_c{num + 1:03d}" if i < n - 1 else None,
             "texto":             ctexto,
             "texto_pai":         ptexto,
         }
+
+        # Correção 3: aviso em anexos truncados
+        if truncation_info and tipo == "anexo":
+            filho["aviso"] = "documento truncado por exceder limite de chunks para tipo anexo"
+
         filhos.append(filho)
 
         pai = {
@@ -402,7 +466,7 @@ def process_doc(doc: dict) -> tuple:
         }
         pais.append(pai)
 
-    return filhos, pais
+    return filhos, pais, truncation_info
 
 
 # ---------------------------------------------------------------------------
@@ -518,9 +582,16 @@ def run_teste() -> None:
         print(f"Título:    {titulo[:80]}")
         print(f"Arquivo:   {path.name}")
 
-        filhos, pais = process_doc(doc)
+        filhos, pais, trunc = process_doc(doc, stem=path.stem)
         print(f"Filhos gerados : {len(filhos)}")
         print(f"Pais gerados   : {len(pais)}")
+
+        if trunc:
+            print(
+                f"  *** TRUNCADO: {trunc['chunks_gerados']} → {trunc['chunks_mantidos']} chunks "
+                f"({trunc['tokens_totais']:,} tokens)"
+            )
+            log_truncated(trunc)
 
         if filhos:
             f0 = filhos[0]
@@ -559,6 +630,7 @@ def run(anos: Optional[list] = None, limite: Optional[int] = None) -> None:
     n_filhos = 0
     n_pais   = 0
     n_erros  = 0
+    n_trunc  = 0
 
     stats_tipo: dict = {}
     max_doc = ("", 0)
@@ -582,13 +654,17 @@ def run(anos: Optional[list] = None, limite: Optional[int] = None) -> None:
         ato_id = doc.get("ato_id", path.stem)
 
         try:
-            filhos, pais = process_doc(doc)
+            filhos, pais, trunc = process_doc(doc, stem=path.stem)
         except Exception as e:
             print(f"ERRO ao chunkar {ato_id} ({path.name}): {e}", file=sys.stderr)
             n_erros += 1
             mark_processed(file_key)
             processados.add(file_key)
             continue
+
+        if trunc:
+            log_truncated(trunc)
+            n_trunc += 1
 
         if filhos:
             try:
@@ -616,6 +692,7 @@ def run(anos: Optional[list] = None, limite: Optional[int] = None) -> None:
             print(
                 f"Progresso: {n_docs}/{total} | "
                 f"chunks gerados: {n_filhos} | "
+                f"truncamentos: {n_trunc} | "
                 f"tempo: {elapsed:.0f}s"
             )
 
@@ -629,6 +706,7 @@ def run(anos: Optional[list] = None, limite: Optional[int] = None) -> None:
     print(f"Total de chunks filhos:       {n_filhos}")
     print(f"Total de chunks pai:          {n_pais}")
     print(f"Média de chunks/documento:    {media:.1f}")
+    print(f"Documentos truncados:         {n_trunc}")
     print(f"Erros:                        {n_erros}")
     print(f"Tempo total:                  {elapsed:.1f}s")
 
@@ -658,13 +736,16 @@ def run(anos: Optional[list] = None, limite: Optional[int] = None) -> None:
             "ato_id": min_doc[0],
             "chunks": int(min_doc[1]) if min_doc[1] < float("inf") else 0,
         },
-        "tempo_segundos": round(elapsed, 1),
-        "espaco_MB":      round(total_bytes / 1_048_576, 1),
+        "docs_truncados":  n_trunc,
+        "tempo_segundos":  round(elapsed, 1),
+        "espaco_MB":       round(total_bytes / 1_048_576, 1),
     }
     SUMMARY_FILE.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("Sumário salvo em data/chunk_summary.json")
+    if n_trunc:
+        print(f"Log de truncamentos em data/chunks_truncados.json ({n_trunc} entradas)")
 
 
 # ---------------------------------------------------------------------------
