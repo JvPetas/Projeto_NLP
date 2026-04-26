@@ -56,3 +56,8 @@ data/ocr_parsed.txt
 # Logs
 *.log
 .claude/
+
+# Chunks gerados pelo chunker (podem ocupar vários GB)
+data/chunks/
+data/chunked.txt
+data/chunk_summary.json

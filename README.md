@@ -153,6 +153,41 @@ extraível cobertos).
 
 ---
 
+### Etapa 6: Chunking hierárquico em 2 níveis (`data/chunk.py`)
+
+Divide o corpus de 27.060 documentos em chunks para uso em pipelines de RAG.
+
+**Estratégia:**
+- **Chunk filho (256 tokens):** unidade de indexação vetorial — retrieval preciso
+- **Chunk pai (512 tokens):** contexto enviado ao LLM — filho anterior + atual + seguinte
+
+**Divisão por tipo de documento:**
+
+| Tipo | Estratégia |
+|------|-----------|
+| `texto_integral` | Marcadores jurídicos (`Art.`, `§`, `CAPÍTULO`, `SEÇÃO`, `Inciso`); cada artigo = 1 filho; sem overlap |
+| `voto` | Tamanho fixo; overlap de 50 tokens entre filhos consecutivos |
+| `nota_tecnica` | Seções numeradas (`1.`, `1.1`, etc.); tabelas markdown inteiras num chunk próprio; sem overlap |
+| `anexo` | Linhas da tabela com cabeçalho repetido em cada chunk; sem overlap |
+| `decisao` | Seções fixas (`RELATÓRIO`, `VOTO`, `DECISÃO`, `EMENTA`, `ACÓRDÃO`); sem overlap |
+
+**Saídas:**
+- `data/chunks/filhos/{ano}/` — JSONs dos chunks filhos (indexados)
+- `data/chunks/pais/{ano}/` — JSONs dos chunks pai (contexto)
+- `data/chunk_summary.json` — estatísticas gerais
+- `data/chunked.txt` — controle de progresso (permite pausar e continuar)
+
+```bash
+python data/chunk.py                    # processa todo o corpus
+python data/chunk.py --ano 2016         # apenas 2016
+python data/chunk.py --limite 100       # primeiros 100 documentos
+python data/chunk.py --teste            # 5 docs representativos com saída detalhada
+```
+
+Dependências: `pip install tiktoken`
+
+---
+
 ### Etapa 5: Upload para Hugging Face (`data/upload_hf.py`)
 
 Publica o corpus completo no Hugging Face Hub como dataset público.
