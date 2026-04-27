@@ -1,201 +1,85 @@
-# Legislação ANEEL — Coleta e Processamento NLP
+# Pipeline RAG — Legislação ANEEL
 
-Projeto de coleta e análise textual dos documentos legislativos publicados pela ANEEL (Agência Nacional de Energia Elétrica), cobrindo os anos de 2016, 2021 e 2022.
+Sistema de Recuperação e Geração Aumentada (RAG) sobre o acervo legislativo da
+ANEEL (Agência Nacional de Energia Elétrica), cobrindo os anos de 2016, 2021 e 2022.
 
-## Estrutura do projeto
-
-```
-Projeto_NLP/
-├── biblioteca_aneel_gov_br_legislacao_2016_metadados.json
-├── biblioteca_aneel_gov_br_legislacao_2021_metadados.json
-├── biblioteca_aneel_gov_br_legislacao_2022_metadados.json
-├── data/
-│   ├── download.py               # script de coleta principal
-│   ├── retry_failed.py           # retry para URLs com falha
-│   ├── failed_final_analysis.md  # análise de impacto das falhas definitivas
-│   └── pdfs/                     # arquivos baixados (ignorado pelo git)
-│       ├── 2016/
-│       ├── 2021/
-│       └── 2022/
-├── .gitignore
-└── README.md
-```
-
-Os arquivos JSON na raiz contêm os metadados de cada documento (título, número, data, tipo e links para download). São gerados em etapa anterior de raspagem do portal da ANEEL.
-
-## Dependências
-
-Python 3.10 ou superior.
-
-```bash
-pip install curl_cffi
-```
-
-> O portal da ANEEL utiliza Cloudflare com verificação de TLS fingerprint. A biblioteca `curl_cffi` com impersonação de navegador é necessária para contornar esse bloqueio de forma legítima durante a coleta de dados públicos.
-
-## Como rodar
-
-```bash
-# A partir da raiz do projeto
-python data/download.py
-```
-
-O script:
-- Lê os metadados dos 3 JSONs na raiz do projeto
-- Verifica quais URLs já foram baixadas (`data/downloaded.txt`)
-- Baixa apenas os arquivos pendentes, com 3 tentativas por URL
-- Aguarda entre 1 e 3 segundos entre cada requisição
-- Registra falhas em `data/failed.txt`
-- Exibe progresso em tempo real e um resumo ao final
-
-Para retentar arquivos que falharam, basta rodar o script novamente — ele pula automaticamente o que já foi baixado com sucesso.
-
-## Etapas do projeto
-
-### Etapa 1: Coleta de documentos
-
-Script `data/download.py` — baixa os ~27.000 documentos a partir dos metadados JSON.
-
-### Etapa 1.1: Retry de downloads com falha (`data/retry_failed.py`)
-
-Script que relê `data/failed.txt`, tenta baixar cada URL com até 5 tentativas
-(delay 3–8s, timeout 90s) e classifica as falhas permanentes.
-
-**Resultado:** das 467 URLs com falha inicial, 432 já estavam em `downloaded.txt`
-(baixadas com sucesso anteriormente). As 35 realmente pendentes retornaram HTTP 404
-definitivo — todos documentos secundários (erratas, adendos, retificações).
-
-**Taxa de cobertura final do corpus:** 99,87% (~26.990 de ~27.025 arquivos).
-
-Análise detalhada: `data/failed_final_analysis.md`
+Dado uma pergunta em linguagem natural sobre regulação do setor elétrico brasileiro,
+o sistema recupera os trechos mais relevantes da legislação e gera uma resposta
+fundamentada, com citação obrigatória da fonte (ato normativo, tipo de documento,
+data de publicação).
 
 ---
 
-### Etapa 2: Varredura de PDFs escaneados (`data/scan_pdfs.py`)
+## Arquitetura
 
-Percorre todos os PDFs nas 3 pastas de anos e classifica cada arquivo:
-- **`tem_texto`** — PyMuPDF extraiu mais de 50 caracteres
-- **`escaneado`** — menos de 50 caracteres (imagem sem camada de texto, requer OCR)
-
-Suporta pausar e continuar via `data/scan_progress.txt`. Resultado em
-`data/scan_report.json` com totais por ano e percentual de escaneados.
-
-```bash
-python data/scan_pdfs.py
+```
+PDFs / HTMLs / ZIPs          Corpus JSON             Chunks (filho + pai)
+da ANEEL (27.060 docs)  →   data/corpus/       →    data/chunks/
+     ↓                           ↓                        ↓
+download.py              parse.py + ocr_scanned.py     chunk.py
+                                                         ↓
+                                                  chunks_hierarquicos.parquet
+                                                  (HuggingFace + local)
+                                                         ↓
+                                              embeddings (e5-large-instruct)
+                                              + indexação Qdrant (local)
+                                                         ↓
+                                         retrieval híbrido (dense + BM25 + RRF)
+                                         + reranking (cross-encoder mMiniLM)
+                                         + expansão por ato_id
+                                                         ↓
+                                              LLM (Maritaca Sabiá-3 / Groq Llama)
+                                                         ↓
+                                               resposta com citação de fonte
 ```
 
----
+### Componentes principais
 
-### Etapa 3: Teste de parsing em amostra representativa (`data/test_sample/`)
-
-Antes de processar o corpus completo, 15 arquivos representativos foram selecionados
-para validar o pipeline de parsing. A amostra cobre:
-- PDFs com texto corrido (2016 e 2022)
-- PDFs com tabelas sem bordas (detecção por padrão de espaçamento)
-- PDF de grande porte (>500 KB, múltiplas páginas)
-- PDF pequeno (<50 KB)
-- PDF de 2016 para verificação de encoding
-- Tipos distintos: DSP (Despacho) e REN (Resolução Normativa)
-- Arquivo HTML e arquivo ZIP
-- PDFs com conteúdo misto (texto + tabela + texto na mesma página)
-- 2 PDFs aleatórios de 2021
-
-**Arquivos:**
-- `data/test_sample/sample_files.json` — lista dos 15 arquivos selecionados
-- `data/test_sample/test_parsing.py` — script de teste (PyMuPDF + detecção por regex)
-- `data/test_sample/relatorio_teste.md` — resultados e recomendações
-
-**Estratégia de detecção de tabelas:** as tabelas do corpus ANEEL não possuem bordas
-visíveis. A detecção usa as posições x,y das palavras extraídas pelo PyMuPDF: quando
-o gap horizontal entre palavras adjacentes supera 15 pontos tipográficos, é inserido
-um separador de coluna. Blocos com 3+ linhas consecutivas e 2+ colunas são convertidos
-para Markdown.
-
-**Resultado:** 1 PDF digitalizado identificado (`nreh20223128.pdf`) — candidato a OCR
-condicional via `scan_report.json` no pipeline final.
+| Etapa | Ferramenta | Detalhe |
+|---|---|---|
+| Coleta | `curl_cffi` | Impersonação de navegador para contornar Cloudflare |
+| Parsing | PyMuPDF + BeautifulSoup4 | PDF, HTML, ZIP; detecção de tabelas sem bordas |
+| OCR | Tesseract + pdf2image | 9 PDFs escaneados, 300 DPI, língua portuguesa |
+| Chunking | tiktoken | Hierárquico 2 níveis, estratégia por tipo de documento |
+| Embeddings | `intfloat/multilingual-e5-large-instruct` | 1024 dims, normalizado |
+| Índice vetorial | Qdrant (local) | Filtros por tipo, situação, ato_id, ano |
+| Sparse retrieval | BM25Okapi | Tokenização preserva termos jurídicos |
+| Fusão | Reciprocal Rank Fusion (RRF) | α = 0,6 (semântico) + 0,4 (BM25) |
+| Reranking | `mmarco-mMiniLMv2-L12-H384-v1` | Cross-encoder multilíngue com PT-BR |
+| LLM | Maritaca Sabiá-3 / Groq Llama 3.3 70B | Gratuitos, prompt jurídico estruturado |
+| Avaliação | RAGAS | Faithfulness, Answer Relevancy, Context Precision |
 
 ---
 
-### Etapa 3.1: OCR para PDFs escaneados (`data/ocr_scanned.py`)
+## Corpus
 
-Os 9 PDFs identificados pelo `scan_pdfs.py` como escaneados (sem camada de texto)
-são processados por OCR com Tesseract, gerando documentos no mesmo formato do `parse.py`.
+| Métrica | Valor |
+|---|---|
+| Documentos | 27.060 |
+| Chunks filhos (indexados) | 429.206 |
+| Caracteres extraídos | ~357 milhões |
+| Score de qualidade máximo (1.0) | 97,2% dos documentos |
+| Cobertura do acervo | 99,87% |
+| Anos cobertos | 2016, 2021, 2022 |
 
-**Estratégia:**
-- Cada página é renderizada como imagem JPEG a 300 DPI via `pdf2image` (Poppler)
-- Tesseract aplica OCR com modelo de língua portuguesa (`--lang por --psm 1`)
-- A confiança média do Tesseract por página é registrada no campo `confianca_ocr`
-- Texto extraído passa pelas mesmas 3 camadas de limpeza do `parse.py`
-- Documentos gerados incluem `"ocr": true` para identificação downstream
+**Distribuição dos chunks por tipo:**
 
-**Campos extras no JSON de saída:**
-- `ocr: true` — marca o documento como produto de OCR
-- `confianca_ocr` — média de confiança Tesseract (0–100) sobre todas as páginas
-
-```bash
-python data/ocr_scanned.py                                    # todos os 9
-python data/ocr_scanned.py --arquivos nreh20223128.pdf        # arquivo específico
-python data/ocr_scanned.py --dpi 200                          # resolução menor
-python data/ocr_scanned.py --poppler-path "C:/poppler/bin"    # caminho do Poppler
-```
-
-Dependências: `pip install pytesseract pdf2image`
-
-Binários externos obrigatórios:
-- **Tesseract-OCR** com pacote de língua portuguesa: https://github.com/UB-Mannheim/tesseract/wiki
-- **Poppler** (Windows): https://github.com/oschwartz10612/poppler-windows/releases/
-
-Saídas: `data/corpus/{ano}/{arquivo}_ocr_{tipo}.json`, `data/ocr_errors.json`,
-`data/ocr_summary.json`
-
-Após esta etapa o corpus fica 100% completo (todos os documentos com texto
-extraível cobertos).
+| Tipo | Chunks | % |
+|---|---|---|
+| texto_integral | 182.953 | 42,6% |
+| voto | 155.910 | 36,3% |
+| nota_tecnica | 73.711 | 17,2% |
+| anexo | 11.398 | 2,7% |
+| decisao | 5.154 | 1,2% |
+| outro | 80 | 0,0% |
 
 ---
 
-### Etapa 6: Chunking hierárquico em 2 níveis (`data/chunk.py`)
+## Dataset HuggingFace
 
-Divide o corpus de 27.060 documentos em chunks para uso em pipelines de RAG.
+O corpus e os artefatos do pipeline estão publicados publicamente em:
 
-**Estratégia:**
-- **Chunk filho (256 tokens):** unidade de indexação vetorial — retrieval preciso
-- **Chunk pai (512 tokens):** contexto enviado ao LLM — filho anterior + atual + seguinte
-
-**Divisão por tipo de documento:**
-
-| Tipo | Estratégia |
-|------|-----------|
-| `texto_integral` | Marcadores jurídicos (`Art.`, `§`, `CAPÍTULO`, `SEÇÃO`, `Inciso`); cada artigo = 1 filho; sem overlap |
-| `voto` | Tamanho fixo; overlap de 50 tokens entre filhos consecutivos |
-| `nota_tecnica` | Seções numeradas (`1.`, `1.1`, etc.); tabelas markdown inteiras num chunk próprio; sem overlap |
-| `anexo` | Linhas da tabela com cabeçalho repetido em cada chunk; sem overlap |
-| `decisao` | Seções fixas (`RELATÓRIO`, `VOTO`, `DECISÃO`, `EMENTA`, `ACÓRDÃO`); sem overlap |
-
-**Saídas:**
-- `data/chunks/filhos/{ano}/` — JSONs dos chunks filhos (indexados)
-- `data/chunks/pais/{ano}/` — JSONs dos chunks pai (contexto)
-- `data/chunk_summary.json` — estatísticas gerais
-- `data/chunked.txt` — controle de progresso (permite pausar e continuar)
-
-```bash
-python data/chunk.py                    # processa todo o corpus
-python data/chunk.py --ano 2016         # apenas 2016
-python data/chunk.py --limite 100       # primeiros 100 documentos
-python data/chunk.py --teste            # 5 docs representativos com saída detalhada
-```
-
-Dependências: `pip install tiktoken`
-
----
-
-### Etapa 5: Upload para Hugging Face (`data/upload_hf.py`)
-
-Publica o corpus completo no Hugging Face Hub como dataset público.
-
-- **27.060 documentos** públicos da ANEEL (2016, 2021, 2022)
-- **~357 milhões de caracteres** extraídos
-- **97,2%** dos documentos com score de qualidade máximo (1.0)
-- Dataset disponível em: https://huggingface.co/datasets/JvPetas/aneel-legislacao
+**[huggingface.co/datasets/JvPetas/aneel-legislacao](https://huggingface.co/datasets/JvPetas/aneel-legislacao)**
 
 ```python
 from datasets import load_dataset
@@ -203,69 +87,150 @@ from datasets import load_dataset
 ds = load_dataset("JvPetas/aneel-legislacao")
 ```
 
+Artefatos disponíveis no repositório do dataset:
+
+| Arquivo | Descrição |
+|---|---|
+| `chunks_hierarquicos.parquet` | 429.206 chunks prontos para embedding (201,9 MB) |
+| `qdrant_storage.tar.gz` | Índice vetorial Qdrant já indexado |
+| `relatorio_avaliacao.json` | Resultados do benchmark RAGAS |
+
+---
+
+## Como rodar
+
+### Pré-requisitos
+
+```
+Python 3.10+
+Token HuggingFace (leitura): HF_TOKEN no arquivo .env
+Chave API Groq (gratuita):   console.groq.com
+Chave API Maritaca (opcional): plataforma.maritaca.ai
+```
+
+Crie `.env` na raiz do projeto:
+
+```
+HF_TOKEN=seu_token_aqui
+GROQ_API_KEY=sua_chave_aqui
+MARITACA_API_KEY=sua_chave_aqui
+```
+
+---
+
+### Opção A — Usar artefatos prontos do HuggingFace (recomendado)
+
+Os notebooks 1 e 3 detectam automaticamente se os artefatos já existem no HF
+e os baixam antes de executar. Basta rodar a partir do Notebook 3:
+
+```
+notebooks/03_rag_pipeline.ipynb   ← baixa Qdrant e chunks do HF automaticamente
+notebooks/04_avaliacao.ipynb      ← avaliação com RAGAS
+```
+
+Tempo estimado: ~5 min (download) + tempo de inferência.
+
+---
+
+### Opção B — Reproduzir do zero
+
+Execute em ordem:
+
 ```bash
-# Token via .env, hf_token.txt ou variável de ambiente HF_TOKEN
+# 1. Coleta dos PDFs (~27.000 documentos)
+python data/download.py
+
+# 2. Varredura: identifica PDFs escaneados
+python data/scan_pdfs.py
+
+# 3. Parsing: extrai texto de PDFs, HTMLs e ZIPs
+python data/parse.py
+
+# 4. OCR nos 9 PDFs escaneados
+python data/ocr_scanned.py
+
+# 5. Upload do corpus bruto para o HuggingFace
 python data/upload_hf.py
 
-# Validar sem fazer upload
-python data/upload_hf.py --dry-run
+# 6. Conversão dos chunks JSON → parquet + upload HF
+python data/json_to_parquet.py
 ```
 
-Dependências: `pip install datasets huggingface_hub`
+Depois, execute os notebooks em ordem:
+
+```
+notebooks/01_chunking_hierarquico.ipynb   (~35 min, sem GPU)
+notebooks/02_embeddings_indexacao.ipynb   (~25 min, GPU T4)
+notebooks/03_rag_pipeline.ipynb
+notebooks/04_avaliacao.ipynb
+```
 
 ---
 
-### Etapa 4: Parsing e extração de texto (`data/parse.py`)
+## Estrutura do repositório
 
-Parser principal do corpus. Para cada documento nos 3 JSONs de metadados, localiza o
-arquivo em `data/pdfs/{ano}/`, extrai o texto e gera um JSON estruturado em
-`data/corpus/{ano}/`.
-
-**Estratégia de extração:**
-- PDFs: PyMuPDF (`fitz`) para texto corrido + detecção de tabelas por posicionamento
-  espacial de palavras (gap > 15pt entre palavras = separador de coluna)
-- HTMLs: BeautifulSoup4 removendo `nav`, `header`, `footer`, `script`, `style`
-- ZIPs: cada PDF interno é processado em memória e vira documento separado
-
-**Limpeza em 3 camadas:**
-1. Padrões específicos ANEEL: "Imprimir", "Pág. X de Y", URLs, "CÓPIA NÃO CONTROLADA"
-2. Normalização: hifenização, `\xa0`, espaços duplos, quebras excessivas
-3. Cabeçalhos/rodapés repetidos: linhas que aparecem em > 30% das páginas
-
-**Score de qualidade por documento (0 a 1):**
-- `0.00` — vazio ou escaneado
-- `0.50–0.99` — texto com páginas suspeitas (razão alfanumérica < 55%)
-- `1.00` — texto limpo e bem estruturado
-
-**9 PDFs escaneados** identificados pelo `scan_report.json` são pulados e registrados
-em `data/skipped_scanned.json` para tratamento manual posterior.
-
-```bash
-python data/parse.py                          # processa tudo
-python data/parse.py --ano 2016               # apenas 2016
-python data/parse.py --limite 100             # primeiros 100 arquivos
-python data/parse.py --arquivos arq1.pdf arq2.zip  # arquivos específicos
 ```
-
-Saídas: `data/corpus/{ano}/*.json`, `data/parse_summary.json`,
-`data/parse_errors.json`, `data/skipped_scanned.json`, `data/missing_files.json`
-
-Dependências adicionais: `pip install pymupdf beautifulsoup4`
+Projeto_NLP/
+├── .env                          # tokens (não versionado)
+├── data/
+│   ├── download.py               # coleta dos PDFs via curl_cffi
+│   ├── retry_failed.py           # retry para URLs com falha
+│   ├── scan_pdfs.py              # identifica PDFs escaneados
+│   ├── parse.py                  # parsing PDF/HTML/ZIP → JSON
+│   ├── ocr_scanned.py            # OCR com Tesseract para PDFs escaneados
+│   ├── upload_hf.py              # publica corpus no HuggingFace
+│   ├── chunk.py                  # chunking hierárquico (filho + pai)
+│   ├── json_to_parquet.py        # converte chunks JSON → parquet + upload HF
+│   ├── chunks/
+│   │   ├── filhos/{ano}/         # JSONs dos chunks filhos (indexados)
+│   │   └── pais/{ano}/           # JSONs dos chunks pai (contexto)
+│   ├── corpus/{ano}/             # JSONs dos documentos parseados
+│   └── pdfs/{ano}/               # PDFs baixados (ignorado pelo git)
+├── notebooks/
+│   ├── README.md
+│   ├── 01 chunking hierarquico.ipynb
+│   ├── 02 embeddings indexacao.ipynb
+│   ├── 03 rag pipeline.ipynb
+│   └── 04 avaliacao.ipynb
+└── biblioteca_aneel_gov_br_legislacao_{ano}_metadados.json  (2016/2021/2022)
+```
 
 ---
 
-## Volume esperado
+## Decisões técnicas
 
-| Ano  | Documentos |
-|------|-----------|
-| 2016 | ~9.000    |
-| 2021 | ~9.000    |
-| 2022 | ~9.000    |
-| **Total** | **~27.000** |
+**`curl_cffi` para coleta**
+O portal da ANEEL usa Cloudflare com verificação de TLS fingerprint. Requests e httpx
+são bloqueados. `curl_cffi` com `impersonate="chrome110"` reproduz o handshake de um
+navegador real, permitindo a coleta dos documentos públicos sem intervenção manual.
 
-O espaço em disco necessário varia conforme o mix de PDFs, HTMLs e ZIPs, mas estimamos entre 10 GB e 40 GB.
+**Chunking estrutural por tipo de documento**
+Textos jurídicos têm estrutura previsível (Art., §, seções numeradas). Dividir
+mecanicamente por token quebra artigos no meio e prejudica a recuperação. A estratégia
+usa marcadores textuais como fronteiras naturais de chunk, com estratégias diferentes
+por tipo (`texto_integral`, `voto`, `nota_tecnica`, `anexo`, `decisao`).
+
+**Hierarquia filho/pai**
+O chunk filho (≤ 256 tokens) vai para o índice vetorial — granularidade fina para
+retrieval preciso. O chunk pai (≤ 512 tokens, = filho anterior + atual + seguinte) é
+o que vai para o LLM — contexto suficiente para uma resposta coesa. Isso resolve o
+trade-off entre precisão de busca e qualidade de resposta.
+
+**Qdrant local**
+Elimina latência de rede e custo de API. O storage serializado em disco é comprimido
+e salvo no HuggingFace, permitindo restauração em qualquer ambiente sem re-indexação.
+
+**Retrieval híbrido + reranking**
+Dense search (semântico) recupera bem variações de linguagem; BM25 recupera bem termos
+jurídicos exatos (número de resolução, artigo específico). RRF combina os dois rankings
+sem normalizar scores. O cross-encoder reranqueia os candidatos fusionados com contexto
+completo da query. Boost por tipo de documento reduz o viés de distribuição (votos +
+notas técnicas somam 53% do índice mas têm peso reduzido frente a textos normativos
+definitivos).
+
+---
 
 ## Fontes
 
-Os documentos são obtidos do portal público da ANEEL:
+Documentos obtidos do portal público da ANEEL:
 - https://www2.aneel.gov.br/biblioteca/legislacao.cfm
