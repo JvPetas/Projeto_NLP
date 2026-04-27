@@ -1,0 +1,41 @@
+# ─── Coleta ───────────────────────────────────────────────────────────────────
+curl_cffi>=0.7.0          # impersonação de navegador para Cloudflare
+requests>=2.31.0
+
+# ─── Parsing e OCR ────────────────────────────────────────────────────────────
+pymupdf>=1.23.0           # extração de texto e posicionamento de palavras
+pdfplumber>=0.10.0
+beautifulsoup4>=4.12.0
+rarfile>=4.1
+openpyxl>=3.1.0
+xlrd>=2.0.1
+pytesseract>=0.3.10
+ftfy>=6.1.0               # correção de encoding em textos legais
+
+# ─── Chunking ─────────────────────────────────────────────────────────────────
+tiktoken>=0.5.0
+
+# ─── Corpus e HuggingFace ─────────────────────────────────────────────────────
+datasets>=2.14.0
+huggingface_hub>=0.24.0   # upload_file e list_repo_files
+python-dotenv>=1.0.0
+pandas>=2.0.0
+pyarrow>=12.0.0
+numpy>=1.24.0
+tqdm>=4.65.0
+
+# ─── Embeddings e indexação (notebooks 1 e 2) ─────────────────────────────────
+transformers>=4.35.0
+torch>=2.0.0
+sentence-transformers>=3.0.0
+qdrant-client>=1.7.0      # query_points() disponível a partir desta versão
+
+# ─── Retrieval e LLMs (notebook 3) ────────────────────────────────────────────
+rank-bm25>=0.2.2
+groq>=0.9.0
+maritalk>=0.3.0
+
+# ─── Avaliação (notebook 4) ───────────────────────────────────────────────────
+ragas>=0.2.0              # API de métricas (Faithfulness, ResponseRelevancy, etc.)
+langchain-groq>=0.1.0
+langchain-huggingface>=0.1.0
