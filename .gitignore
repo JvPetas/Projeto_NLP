@@ -61,3 +61,9 @@ data/ocr_parsed.txt
 data/chunks/
 data/chunked.txt
 data/chunk_summary.json
+
+# Artefatos gerados — não versionados
+data/embeddings/
+data/index/
+data/chunks_truncados.json
+data/chunks_hierarquicos.parquet
