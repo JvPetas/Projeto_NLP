@@ -19,7 +19,7 @@ da ANEEL (27.060 docs)  →   data/corpus/       →    data/chunks/
 download.py              parse.py + ocr_scanned.py     chunk.py
                                                          ↓
                                                   chunks_hierarquicos.parquet
-                                                  (HuggingFace + local)
+                                                  (HuggingFace — público)
                                                          ↓
                                               embeddings (e5-large-instruct)
                                               + indexação Qdrant (local)
@@ -77,64 +77,99 @@ download.py              parse.py + ocr_scanned.py     chunk.py
 
 ## Dataset HuggingFace
 
-O corpus e os artefatos do pipeline estão publicados publicamente em:
+Os chunks do pipeline estão publicados publicamente em:
 
 **[huggingface.co/datasets/JvPetas/aneel-legislacao](https://huggingface.co/datasets/JvPetas/aneel-legislacao)**
 
-```python
-from datasets import load_dataset
-
-ds = load_dataset("JvPetas/aneel-legislacao")
-```
-
-Artefatos disponíveis no repositório do dataset:
-
 | Arquivo | Descrição |
 |---|---|
-| `chunks_hierarquicos.parquet` | 429.206 chunks prontos para embedding (201,9 MB) |
-| `qdrant_storage.tar.gz` | Índice vetorial Qdrant já indexado |
-| `relatorio_avaliacao.json` | Resultados do benchmark RAGAS |
+| `chunks_hierarquicos.parquet` | 429.206 chunks prontos para embedding (202 MB) |
 
 ---
 
-## Como rodar
+## Como rodar (Google Colab — recomendado)
 
-### Pré-requisitos
+### 1. Chaves de API necessárias
+
+Obtenha as chaves gratuitamente:
+
+| Chave | Onde obter | Obrigatória? |
+|---|---|---|
+| `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) | Sim (LLM) |
+| `MARITACA_API_KEY` | [plataforma.maritaca.ai](https://plataforma.maritaca.ai/chaves-api) | Opcional |
+
+### 2. Configure os secrets no Colab
+
+Em cada notebook, vá em **Secrets** (ícone de chave no menu lateral esquerdo) e adicione:
 
 ```
-Python 3.10+
-Token HuggingFace (leitura): HF_TOKEN no arquivo .env
-Chave API Groq (gratuita):   console.groq.com
-Chave API Maritaca (opcional): plataforma.maritaca.ai
+GROQ_API_KEY      → sua chave Groq
+MARITACA_API_KEY  → sua chave Maritaca (opcional)
 ```
 
-Crie `.env` na raiz do projeto:
+### 3. Execute os notebooks em ordem
+
+> **Atenção:** Faça upload de cada notebook no Colab antes de rodar.
+> Ative GPU em `Runtime > Change runtime type > T4 GPU` antes do Notebook 2.
+
+#### Notebook 1 — Chunking (PULAR — artefatos já no HuggingFace)
+Os chunks já estão disponíveis publicamente em `JvPetas/aneel-legislacao`. Não é necessário rodar.
+
+#### Notebook 2 — Embeddings + Indexação Qdrant (~25 min com GPU T4)
 
 ```
-HF_TOKEN=seu_token_aqui
-GROQ_API_KEY=sua_chave_aqui
-MARITACA_API_KEY=sua_chave_aqui
+notebooks/02 embeddings indexacao.ipynb
+```
+
+- Baixa os chunks automaticamente do HuggingFace
+- Gera embeddings com `multilingual-e5-large-instruct`
+- Cria e indexa a coleção Qdrant em disco
+- **Requer GPU T4** (`Runtime > Change runtime type > T4 GPU`)
+
+#### Notebook 3 — Pipeline RAG
+
+```
+notebooks/03 rag pipeline.ipynb
+```
+
+- Restaura o índice Qdrant gerado no Notebook 2
+- Monta o Google Drive para carregar o `qdrant_storage.tar.gz`
+- Executa retrieval híbrido (dense + BM25 + RRF + reranking)
+- Use `ask("sua pergunta")` para consultar o sistema
+
+> O Notebook 3 lê o `qdrant_storage` gerado pelo Notebook 2.
+> Se estiver numa sessão nova do Colab, salve o `qdrant_storage.tar.gz` no seu Google Drive
+> na pasta `aneel_rag` antes de rodar o Notebook 3.
+
+#### Notebook 4 — Avaliação com RAGAS
+
+```
+notebooks/04 avaliacao.ipynb
+```
+
+- Avalia o pipeline com benchmark RAGAS
+- Métricas: Faithfulness, Answer Relevancy, Context Precision
+
+---
+
+## Fluxo completo resumido
+
+```
+Colab (sem GPU):  Notebook 1  →  chunks_hierarquicos.parquet  →  HuggingFace
+                                        [já disponível — pular]
+
+Colab (GPU T4):   Notebook 2  →  embeddings + Qdrant indexado  →  qdrant_storage/
+
+Colab:            Notebook 3  →  RAG pipeline pronto para consultas
+
+Colab:            Notebook 4  →  avaliação RAGAS
 ```
 
 ---
 
-### Opção A — Usar artefatos prontos do HuggingFace (recomendado)
+## Reproduzir do zero (pipeline completo)
 
-Os notebooks 1 e 3 detectam automaticamente se os artefatos já existem no HF
-e os baixam antes de executar. Basta rodar a partir do Notebook 3:
-
-```
-notebooks/03_rag_pipeline.ipynb   ← baixa Qdrant e chunks do HF automaticamente
-notebooks/04_avaliacao.ipynb      ← avaliação com RAGAS
-```
-
-Tempo estimado: ~5 min (download) + tempo de inferência.
-
----
-
-### Opção B — Reproduzir do zero
-
-Execute em ordem:
+Para refazer todo o pipeline desde a coleta:
 
 ```bash
 # 1. Coleta dos PDFs (~27.000 documentos)
@@ -146,23 +181,26 @@ python data/scan_pdfs.py
 # 3. Parsing: extrai texto de PDFs, HTMLs e ZIPs
 python data/parse.py
 
-# 4. OCR nos 9 PDFs escaneados
+# 4. OCR nos PDFs escaneados
 python data/ocr_scanned.py
 
 # 5. Upload do corpus bruto para o HuggingFace
 python data/upload_hf.py
 
-# 6. Conversão dos chunks JSON → parquet + upload HF
+# 6. Chunking hierárquico
+# → notebooks/01 chunking hierarquico.ipynb  (~35 min, sem GPU)
+
+# 7. Conversão dos chunks JSON → parquet + upload HF
 python data/json_to_parquet.py
-```
 
-Depois, execute os notebooks em ordem:
+# 8. Embeddings + indexação Qdrant
+# → notebooks/02 embeddings indexacao.ipynb  (~25 min, GPU T4)
 
-```
-notebooks/01_chunking_hierarquico.ipynb   (~35 min, sem GPU)
-notebooks/02_embeddings_indexacao.ipynb   (~25 min, GPU T4)
-notebooks/03_rag_pipeline.ipynb
-notebooks/04_avaliacao.ipynb
+# 9. Pipeline RAG
+# → notebooks/03 rag pipeline.ipynb
+
+# 10. Avaliação
+# → notebooks/04 avaliacao.ipynb
 ```
 
 ---
@@ -171,7 +209,6 @@ notebooks/04_avaliacao.ipynb
 
 ```
 Projeto_NLP/
-├── .env                          # tokens (não versionado)
 ├── data/
 │   ├── download.py               # coleta dos PDFs via curl_cffi
 │   ├── retry_failed.py           # retry para URLs com falha
@@ -181,11 +218,8 @@ Projeto_NLP/
 │   ├── upload_hf.py              # publica corpus no HuggingFace
 │   ├── chunk.py                  # chunking hierárquico (filho + pai)
 │   ├── json_to_parquet.py        # converte chunks JSON → parquet + upload HF
-│   ├── chunks/
-│   │   ├── filhos/{ano}/         # JSONs dos chunks filhos (indexados)
-│   │   └── pais/{ano}/           # JSONs dos chunks pai (contexto)
-│   ├── corpus/{ano}/             # JSONs dos documentos parseados
-│   └── pdfs/{ano}/               # PDFs baixados (ignorado pelo git)
+│   └── test_sample/
+│       └── test_parsing.py       # validação da qualidade do parsing
 ├── notebooks/
 │   ├── README.md
 │   ├── 01 chunking hierarquico.ipynb
@@ -217,8 +251,8 @@ o que vai para o LLM — contexto suficiente para uma resposta coesa. Isso resol
 trade-off entre precisão de busca e qualidade de resposta.
 
 **Qdrant local**
-Elimina latência de rede e custo de API. O storage serializado em disco é comprimido
-e salvo no HuggingFace, permitindo restauração em qualquer ambiente sem re-indexação.
+Elimina latência de rede e custo de API. O storage serializado em disco pode ser
+comprimido e salvo para restauração em qualquer ambiente sem re-indexação.
 
 **Retrieval híbrido + reranking**
 Dense search (semântico) recupera bem variações de linguagem; BM25 recupera bem termos
