@@ -67,3 +67,9 @@ data/embeddings/
 data/index/
 data/chunks_truncados.json
 data/chunks_hierarquicos.parquet
+
+# Índice Qdrant e logs gerados localmente
+data/qdrant_storage.tar.gz
+data/qdrant_storage/
+data/retry_log.txt
+data/scan_log.txt

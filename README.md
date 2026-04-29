@@ -84,10 +84,71 @@ Os chunks do pipeline estão publicados publicamente em:
 | Arquivo | Descrição |
 |---|---|
 | `chunks_hierarquicos.parquet` | 429.206 chunks prontos para embedding (202 MB) |
+| `qdrant_storage.tar.gz` | Índice vetorial Qdrant já indexado (239 MB) |
 
 ---
 
-## Como rodar (Google Colab — recomendado)
+## Como rodar (Terminal — recomendado)
+
+Este é o método mais simples. Funciona em qualquer máquina com Python 3.10+ e internet, sem necessidade de GPU ou Colab.
+
+### Pré-requisitos
+
+Crie o arquivo `.env` na raiz do projeto:
+
+```
+HF_TOKEN=seu_token_huggingface        # leitura, pode ser sem token (dataset público)
+GROQ_API_KEY=sua_chave_groq           # gratuita em console.groq.com
+```
+
+### Instalação
+
+```bash
+git clone https://github.com/JvPetas/Projeto_NLP
+cd Projeto_NLP
+pip install -r requirements.txt
+```
+
+### Setup (apenas na primeira vez — baixa ~1.5GB do HuggingFace)
+
+```bash
+python data/setup.py
+```
+
+### Uso interativo (recomendado — carrega uma vez, responde várias perguntas)
+
+```bash
+python data/rag.py
+```
+
+```
+Pipeline pronto — 419.392 pontos no Qdrant | 429.206 chunks no BM25
+
+Pergunta: Quais são os critérios para revisão tarifária das distribuidoras?
+Pergunta: O que é o Mecanismo de Realocação de Energia MRE?
+Pergunta: sair
+```
+
+### Resposta direta (uma pergunta e encerra)
+
+```bash
+python data/rag.py "Quais são os critérios para revisão tarifária?"
+```
+
+> Atenção: o carregamento inicial leva 3-5 minutos (modelo de embedding de 1.1GB + BM25 com 429k chunks). Use o modo interativo para fazer várias perguntas sem recarregar.
+
+---
+
+## Notebooks (usados para geração dos artefatos)
+
+Os notebooks foram utilizados para gerar os embeddings, indexar o Qdrant e fazer os uploads para o HuggingFace. Os artefatos gerados já estão disponíveis publicamente — não é necessário rodar os notebooks para usar o sistema.
+
+Use o método Terminal acima para consultar o pipeline diretamente.
+
+Os notebooks são úteis apenas se você quiser:
+- Regenerar os embeddings com outro modelo
+- Reindexar o Qdrant do zero
+- Rodar a avaliação RAGAS completa
 
 ### 1. Chaves de API necessárias
 
@@ -95,6 +156,7 @@ Obtenha as chaves gratuitamente:
 
 | Chave | Onde obter | Obrigatória? |
 |---|---|---|
+| `HF_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | Não (dataset público) |
 | `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) | Sim (LLM) |
 | `MARITACA_API_KEY` | [plataforma.maritaca.ai](https://plataforma.maritaca.ai/chaves-api) | Opcional |
 
@@ -133,13 +195,9 @@ notebooks/03 rag pipeline.ipynb
 ```
 
 - Restaura o índice Qdrant gerado no Notebook 2
-- Monta o Google Drive para carregar o `qdrant_storage.tar.gz`
+- O Notebook 3 baixa o `qdrant_storage.tar.gz` automaticamente do HuggingFace. Não é necessário Google Drive.
 - Executa retrieval híbrido (dense + BM25 + RRF + reranking)
 - Use `ask("sua pergunta")` para consultar o sistema
-
-> O Notebook 3 lê o `qdrant_storage` gerado pelo Notebook 2.
-> Se estiver numa sessão nova do Colab, salve o `qdrant_storage.tar.gz` no seu Google Drive
-> na pasta `aneel_rag` antes de rodar o Notebook 3.
 
 #### Notebook 4 — Avaliação com RAGAS
 
@@ -210,16 +268,19 @@ python data/json_to_parquet.py
 ```
 Projeto_NLP/
 ├── data/
-│   ├── download.py               # coleta dos PDFs via curl_cffi
-│   ├── retry_failed.py           # retry para URLs com falha
-│   ├── scan_pdfs.py              # identifica PDFs escaneados
-│   ├── parse.py                  # parsing PDF/HTML/ZIP → JSON
-│   ├── ocr_scanned.py            # OCR com Tesseract para PDFs escaneados
-│   ├── upload_hf.py              # publica corpus no HuggingFace
-│   ├── chunk.py                  # chunking hierárquico (filho + pai)
-│   ├── json_to_parquet.py        # converte chunks JSON → parquet + upload HF
+│   ├── setup.py                   # baixa artefatos do HF para execução local
+│   ├── rag.py                     # pipeline RAG completo para execução no terminal
+│   ├── download.py                # coleta dos PDFs via curl_cffi
+│   ├── download_e_parse_anexos.py # download dos 33 anexos tarifários extras
+│   ├── retry_failed.py            # retry para URLs com falha
+│   ├── scan_pdfs.py               # identifica PDFs escaneados
+│   ├── parse.py                   # parsing PDF/HTML/ZIP → JSON
+│   ├── ocr_scanned.py             # OCR com Tesseract para PDFs escaneados
+│   ├── upload_hf.py               # publica corpus no HuggingFace
+│   ├── chunk.py                   # chunking hierárquico (filho + pai)
+│   ├── json_to_parquet.py         # converte chunks JSON → parquet + upload HF
 │   └── test_sample/
-│       └── test_parsing.py       # validação da qualidade do parsing
+│       └── test_parsing.py        # validação da qualidade do parsing
 ├── notebooks/
 │   ├── README.md
 │   ├── 01 chunking hierarquico.ipynb
@@ -268,3 +329,5 @@ definitivos).
 
 Documentos obtidos do portal público da ANEEL:
 - https://www2.aneel.gov.br/biblioteca/legislacao.cfm
+
+> Nota: o portal da ANEEL retorna 403 Forbidden em acessos diretos por bloqueio Cloudflare. Isso é esperado — os documentos foram coletados via curl_cffi que contorna esse bloqueio reproduzindo o handshake TLS do Chrome.
