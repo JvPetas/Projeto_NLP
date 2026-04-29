@@ -94,18 +94,26 @@ Este é o método mais simples. Funciona em qualquer máquina com Python 3.10+ e
 
 ### Pré-requisitos
 
-Crie o arquivo `.env` na raiz do projeto:
-
-```
-HF_TOKEN=seu_token_huggingface        # leitura, pode ser sem token (dataset público)
-GROQ_API_KEY=sua_chave_groq           # gratuita em console.groq.com
-```
+- Python 3.10 ou superior (verificar com: `python --version`)
 
 ### Instalação
 
 ```bash
 git clone https://github.com/JvPetas/Projeto_NLP
 cd Projeto_NLP
+```
+
+Crie o arquivo `.env` na raiz do projeto:
+
+```
+HF_TOKEN=seu_token_huggingface        # leitura, pode ser sem token (dataset público)
+GROQ_API_KEY=sua_chave_groq           # obrigatória — sem ela o sistema não roda
+```
+
+> **Importante:** `GROQ_API_KEY` é obrigatória. Sem ela o sistema não roda.
+> Obtenha gratuitamente em [console.groq.com](https://console.groq.com) (sem cartão de crédito).
+
+```bash
 pip install -r requirements.txt
 ```
 
@@ -122,7 +130,7 @@ python data/rag.py
 ```
 
 ```
-Pipeline pronto — 419.392 pontos no Qdrant | 429.206 chunks no BM25
+Pipeline pronto — 429.206 pontos no Qdrant | 429.206 chunks no BM25
 
 Pergunta: Quais são os critérios para revisão tarifária das distribuidoras?
 Pergunta: O que é o Mecanismo de Realocação de Energia MRE?
